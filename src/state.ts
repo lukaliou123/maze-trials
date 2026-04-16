@@ -7,8 +7,8 @@ export function createStateFromLevel(level: LevelDef): GameState {
 
   const grid: TileKind[][] = [];
   const boxes: Box[] = [];
-  let robotA: Robot | null = null;
-  let robotC: Robot | null = null;
+  let robot1: Robot | null = null;
+  let robot2: Robot | null = null;
   let exitPos: Vec2 = { x: 0, y: 0 };
 
   for (let y = 0; y < height; y++) {
@@ -23,21 +23,21 @@ export function createStateFromLevel(level: LevelDef): GameState {
           row.push('exit');
           exitPos = { x, y };
           break;
-        case 'A':
+        case '1':
           row.push('floor');
-          robotA = {
-            id: 'A',
+          robot1 = {
+            id: 'R1',
             pos: { x, y },
-            facing: 'down',
+            facing: 'up',
             attachedBoxIndex: null,
           };
           break;
-        case 'C':
+        case '2':
           row.push('floor');
-          robotC = {
-            id: 'C',
+          robot2 = {
+            id: 'R2',
             pos: { x, y },
-            facing: 'down',
+            facing: 'up',
             attachedBoxIndex: null,
           };
           break;
@@ -45,7 +45,7 @@ export function createStateFromLevel(level: LevelDef): GameState {
           row.push('floor');
           boxes.push({ pos: { x, y }, isRedBuddy: false });
           break;
-        case 'X':
+        case '3':
           row.push('floor');
           boxes.push({ pos: { x, y }, isRedBuddy: true });
           break;
@@ -57,19 +57,36 @@ export function createStateFromLevel(level: LevelDef): GameState {
     grid.push(row);
   }
 
-  if (!robotA || !robotC) {
-    throw new Error('Level must have both robot A and robot C');
+  if (!robot1 || !robot2) {
+    throw new Error('Level must have both robot R1 and robot R2');
+  }
+
+  // Compute safe zone: 3x3 area centered on exitPos
+  const safeZone: Vec2[] = [];
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const sx = exitPos.x + dx;
+      const sy = exitPos.y + dy;
+      if (sx >= 0 && sx < width && sy >= 0 && sy < height) {
+        const tile = grid[sy][sx];
+        if (tile !== 'wall') {
+          safeZone.push({ x: sx, y: sy });
+        }
+      }
+    }
   }
 
   return {
     grid,
     width,
     height,
-    robots: [robotA, robotC],
+    robots: [robot1, robot2],
     boxes,
     exitPos,
+    safeZone,
     selectedRobotIndex: 0,
     steps: 0,
     won: false,
+    winPhase: 0,
   };
 }

@@ -7,7 +7,7 @@ export type Direction = 'up' | 'down' | 'left' | 'right';
 
 export type TileKind = 'wall' | 'floor' | 'exit';
 
-export type RobotId = 'A' | 'C';
+export type RobotId = 'R1' | 'R2';
 
 export interface Robot {
   id: RobotId;
@@ -28,9 +28,11 @@ export interface GameState {
   robots: [Robot, Robot];
   boxes: Box[];
   exitPos: Vec2;
+  safeZone: Vec2[]; // all floor tiles in 3x3 safe area
   selectedRobotIndex: number;
   steps: number;
   won: boolean;
+  winPhase: 0 | 1 | 2; // 0=not won, 1=R3 revived (box gone), 2=show victory
 }
 
 export interface LevelDef {

@@ -21,11 +21,11 @@ export function setupInput(onAction: (action: GameAction) => void): void {
         break;
       case 'q':
       case 'Q':
-        onAction({ type: 'selectRobot', id: 'A' });
+        onAction({ type: 'selectRobot', id: 'R1' });
         break;
       case 'e':
       case 'E':
-        onAction({ type: 'selectRobot', id: 'C' });
+        onAction({ type: 'selectRobot', id: 'R2' });
         break;
       case ' ':
         onAction({ type: 'toggleAttach' });

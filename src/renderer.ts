@@ -15,12 +15,29 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     drawGrid(ctx, state);
+    drawSafeZoneOverlay(ctx, state);
     drawBoxes(ctx, state);
     drawAttachmentLines(ctx, state);
     drawRobots(ctx, state);
+
+    // In winPhase >= 1, draw R3 as a healthy beetle (revived)
+    if (state.winPhase >= 1) {
+      const r3 = state.boxes.find(b => b.isRedBuddy);
+      if (r3) {
+        const px = r3.pos.x * TILE_SIZE, py = r3.pos.y * TILE_SIZE;
+        ctx.fillStyle = COLORS.exit;
+        ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+        drawBeetle(ctx, px + TILE_SIZE / 2, py + TILE_SIZE / 2,
+          TILE_SIZE * 0.456, '#1a6b2a', 'R3', 0, false);
+      }
+    }
+
+    // Selection ring drawn LAST — always on top of everything
+    drawSelectionRing(ctx, state);
+
     drawHUD(ctx, state, levelName);
 
-    if (state.won) {
+    if (state.winPhase >= 2) {
       drawWinOverlay(ctx, state);
     }
   }
@@ -54,13 +71,38 @@ function drawGrid(ctx: CanvasRenderingContext2D, state: GameState): void {
           ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
           // Draw exit arrow / marker
           ctx.fillStyle = COLORS.exitGlow;
-          ctx.font = `bold ${TILE_SIZE * 0.5}px sans-serif`;
+          ctx.font = `bold ${TILE_SIZE * 0.22}px sans-serif`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText('EXIT', px + TILE_SIZE / 2, py + TILE_SIZE / 2);
+          ctx.fillText('REPAIR', px + TILE_SIZE / 2, py + TILE_SIZE / 2 - TILE_SIZE * 0.1);
+          ctx.fillText('ROOM', px + TILE_SIZE / 2, py + TILE_SIZE / 2 + TILE_SIZE * 0.15);
           break;
       }
     }
+  }
+}
+
+// --- Safe zone overlay ---
+function drawSafeZoneOverlay(ctx: CanvasRenderingContext2D, state: GameState): void {
+  // Draw semi-transparent green on safe zone tiles (except exit itself)
+  for (const s of state.safeZone) {
+    if (state.grid[s.y][s.x] === 'exit') continue;
+    const px = s.x * TILE_SIZE, py = s.y * TILE_SIZE;
+    ctx.fillStyle = 'rgba(60, 180, 80, 0.2)';
+    ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+  }
+
+  // Label "HOME" centered on the safe zone
+  if (state.safeZone.length > 0) {
+    const ex = state.exitPos.x, ey = state.exitPos.y;
+    // Place "HOME" below the repair room (bottom row of safe zone)
+    const labelX = (ex + 0.5) * TILE_SIZE;
+    const labelY = (ey + 1.7) * TILE_SIZE;
+    ctx.fillStyle = 'rgba(60, 180, 80, 0.6)';
+    ctx.font = `bold ${TILE_SIZE * 0.32}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('HOME', labelX, labelY);
   }
 }
 
@@ -78,7 +120,7 @@ function drawBox(ctx: CanvasRenderingContext2D, box: Box): void {
   const size = TILE_SIZE - margin * 2;
 
   if (box.isRedBuddy) {
-    // Red buddy box
+    // Red cargo box
     ctx.fillStyle = COLORS.boxRedBuddy;
     roundRect(ctx, px + margin, py + margin, size, size, 6);
     ctx.fill();
@@ -86,8 +128,17 @@ function drawBox(ctx: CanvasRenderingContext2D, box: Box): void {
     ctx.lineWidth = 2;
     ctx.stroke();
 
-    // Robot head icon
-    drawRobotHeadIcon(ctx, px + TILE_SIZE / 2, py + TILE_SIZE / 2, size * 0.35);
+    // Beetle inside the box (same size as R1/R2, collapsed = unconscious)
+    drawBeetle(
+      ctx,
+      px + TILE_SIZE / 2,
+      py + TILE_SIZE / 2,
+      TILE_SIZE * 0.456,
+      '#cc8888',
+      'R3',
+      0,
+      true
+    );
   } else {
     // Normal cardboard box
     ctx.fillStyle = COLORS.boxNormal;
@@ -109,36 +160,132 @@ function drawBox(ctx: CanvasRenderingContext2D, box: Box): void {
   }
 }
 
-function drawRobotHeadIcon(
+// Facing direction to rotation angle (0 = up)
+const FACING_ANGLE: Record<string, number> = {
+  up: 0,
+  right: Math.PI / 2,
+  down: Math.PI,
+  left: -Math.PI / 2,
+};
+
+// Draw a hexapod robot seen from top-down (MINIHEXA style)
+// Drawn facing UP in local coords, then rotated by `rot`
+function drawBeetle(
   ctx: CanvasRenderingContext2D,
   cx: number,
   cy: number,
-  r: number
+  r: number,
+  color: string,
+  label: string,
+  rot: number = 0,
+  collapsed: boolean = false
 ): void {
-  // Head circle
-  ctx.fillStyle = '#ffffff';
-  ctx.beginPath();
-  ctx.arc(cx, cy + 2, r * 0.6, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(rot);
 
-  // Eyes
-  ctx.fillStyle = '#000000';
-  ctx.beginPath();
-  ctx.arc(cx - r * 0.2, cy, r * 0.12, 0, Math.PI * 2);
-  ctx.arc(cx + r * 0.2, cy, r * 0.12, 0, Math.PI * 2);
-  ctx.fill();
+  const bodyR = r * 0.5;
 
-  // Antenna
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 2;
+  // --- 6 legs, 3 per side ---
+  const legOffsets = [-0.55, 0, 0.55];
+  // Collapsed = legs curled inward (unconscious) but still visible
+  const seg1 = collapsed ? r * 0.2 : r * 0.28;
+  const seg2 = collapsed ? r * 0.16 : r * 0.22;
+
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (const oy of legOffsets) {
+    for (const side of [-1, 1]) {
+      const hipX = side * bodyR * 0.8;
+      const hipY = oy * bodyR * 1.6;
+      const kneeX = hipX + side * seg1;
+      const kneeY = hipY + (collapsed ? seg1 * 0.5 : oy * 0.15 * seg1);
+      const footX = collapsed ? kneeX - side * seg2 * 0.5 : kneeX + side * seg2;
+      const footY = kneeY + (collapsed ? seg2 * 0.8 : seg2 * 0.4);
+
+      // Shadow
+      ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(hipX, hipY);
+      ctx.lineTo(kneeX, kneeY);
+      ctx.lineTo(footX, footY);
+      ctx.stroke();
+      // Main leg
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(hipX, hipY);
+      ctx.lineTo(kneeX, kneeY);
+      ctx.lineTo(footX, footY);
+      ctx.stroke();
+      // Joint & foot
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.beginPath();
+      ctx.arc(kneeX, kneeY, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // --- Round body ---
+  ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.moveTo(cx, cy - r * 0.4);
-  ctx.lineTo(cx, cy - r * 0.8);
+  ctx.arc(0, 0, bodyR, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+  ctx.lineWidth = 1.5;
   ctx.stroke();
+
+  // Inner ring detail
+  ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+  ctx.lineWidth = 0.8;
   ctx.beginPath();
-  ctx.arc(cx, cy - r * 0.85, 3, 0, Math.PI * 2);
+  ctx.arc(0, 0, bodyR * 0.6, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // --- Eyes at front (top in local coords) ---
+  const eyeY = -bodyR * 0.55;
+  const eyeSpread = bodyR * 0.35;
+  const eyeR = bodyR * 0.18;
+  if (collapsed) {
+    // Half-shut eyes (unconscious)
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath();
+    ctx.arc(-eyeSpread, eyeY, eyeR * 0.7, 0, Math.PI * 2);
+    ctx.arc(eyeSpread, eyeY, eyeR * 0.7, 0, Math.PI * 2);
+    ctx.fill();
+    // Closed line
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(-eyeSpread - eyeR * 0.5, eyeY);
+    ctx.lineTo(-eyeSpread + eyeR * 0.5, eyeY);
+    ctx.moveTo(eyeSpread - eyeR * 0.5, eyeY);
+    ctx.lineTo(eyeSpread + eyeR * 0.5, eyeY);
+    ctx.stroke();
+  } else {
+    // Normal open eyes
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(-eyeSpread, eyeY, eyeR, 0, Math.PI * 2);
+    ctx.arc(eyeSpread, eyeY, eyeR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.beginPath();
+    ctx.arc(-eyeSpread, eyeY - eyeR * 0.15, eyeR * 0.5, 0, Math.PI * 2);
+    ctx.arc(eyeSpread, eyeY - eyeR * 0.15, eyeR * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // --- Label (counter-rotate so text stays upright) ---
+  ctx.rotate(-rot);
   ctx.fillStyle = '#ffffff';
-  ctx.fill();
+  ctx.font = `bold ${r * 0.456}px monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, 0, bodyR * 0.2);
+
+  ctx.restore();
 }
 
 // --- Robots ---
@@ -148,46 +295,34 @@ function drawRobots(ctx: CanvasRenderingContext2D, state: GameState): void {
   });
 }
 
+function drawSelectionRing(ctx: CanvasRenderingContext2D, state: GameState): void {
+  const robot = state.robots[state.selectedRobotIndex];
+  const cx = robot.pos.x * TILE_SIZE + TILE_SIZE / 2;
+  const cy = robot.pos.y * TILE_SIZE + TILE_SIZE / 2;
+  const radius = TILE_SIZE * 0.456;
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius + 8, 0, Math.PI * 2);
+  ctx.strokeStyle = COLORS.robotSelected;
+  ctx.lineWidth = 3;
+  ctx.stroke();
+}
+
 function drawRobot(
   ctx: CanvasRenderingContext2D,
   robot: Robot,
-  isSelected: boolean
+  _isSelected: boolean
 ): void {
   const cx = robot.pos.x * TILE_SIZE + TILE_SIZE / 2;
   const cy = robot.pos.y * TILE_SIZE + TILE_SIZE / 2;
-  const radius = TILE_SIZE * 0.35;
+  const radius = TILE_SIZE * 0.456;
+  const color = robot.id === 'R1' ? COLORS.robotA : COLORS.robotC;
 
-  // Selection glow
-  if (isSelected) {
-    ctx.beginPath();
-    ctx.arc(cx, cy, radius + 6, 0, Math.PI * 2);
-    ctx.strokeStyle = COLORS.robotSelected;
-    ctx.lineWidth = 3;
-    ctx.stroke();
-  }
-
-  // Robot body
-  ctx.fillStyle = robot.id === 'A' ? COLORS.robotA : COLORS.robotC;
-  ctx.beginPath();
-  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Robot outline
-  ctx.strokeStyle = 'rgba(0,0,0,0.3)';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  // Robot label
-  ctx.fillStyle = '#ffffff';
-  ctx.font = `bold ${TILE_SIZE * 0.35}px sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(robot.id, cx, cy);
+  drawBeetle(ctx, cx, cy, radius, color, robot.id, FACING_ANGLE[robot.facing] ?? 0);
 
   // Attachment indicator (small dot)
   if (robot.attachedBoxIndex !== null) {
     ctx.beginPath();
-    ctx.arc(cx + radius * 0.6, cy - radius * 0.6, 5, 0, Math.PI * 2);
+    ctx.arc(cx + radius * 0.7, cy - radius * 0.7, 5, 0, Math.PI * 2);
     ctx.fillStyle = COLORS.attachLine;
     ctx.fill();
   }
@@ -253,7 +388,7 @@ function drawHUD(
   // Selected robot
   const selRobot = state.robots[state.selectedRobotIndex];
   const robotColor =
-    selRobot.id === 'A' ? COLORS.robotA : COLORS.robotC;
+    selRobot.id === 'R1' ? COLORS.robotA : COLORS.robotC;
   ctx.fillStyle = robotColor;
   const mid = (state.width * TILE_SIZE) / 2;
   ctx.textAlign = 'center';
@@ -285,11 +420,11 @@ function drawWinOverlay(
   ctx.font = `bold ${TILE_SIZE * 0.6}px sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('LEVEL COMPLETE!', w / 2, h / 2 - 20);
+  ctx.fillText('R3 REPAIRED!', w / 2, h / 2 - 20);
 
   ctx.font = `${TILE_SIZE * 0.3}px sans-serif`;
   ctx.fillStyle = '#ffffff';
-  ctx.fillText('Press N for next level, R to restart', w / 2, h / 2 + 25);
+  ctx.fillText('All robots safe! Press N for next level', w / 2, h / 2 + 25);
 }
 
 // --- Utility: rounded rectangle ---

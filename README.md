@@ -1,29 +1,68 @@
 # Maze Trials
 
-A top-down grid-based puzzle game built with TypeScript and HTML Canvas. Control two rescue robots to navigate a maze, move boxes to clear paths, and extract a stranded teammate to the exit.
+A two-robot cooperative puzzle game with AI solver, built for demonstrating embodied AI capabilities. Two hexapod rescue robots (R1, R2) navigate a maze, move obstacle boxes, and extract an unconscious teammate (R3) back to the Repair Room.
+
+**Live Demo**: https://pxzhang16.github.io/maze-trials/
+
+## Background
+
+This project is a simulation layer for an embodied AI research platform. The puzzle game serves as:
+- **AI Solver testbed** — validate planning algorithms without physical robots
+- **Digital twin visualization** — monitor real robot execution in sync
+- **Challenge designer** — rapidly prototype new scenarios via ASCII maps
+
+The physical system uses two MINIHEXA hexapod robots controlled by an AI that observes the maze via overhead camera, computes the solution, and issues movement commands.
 
 ## Gameplay
 
-Two robots (A and C) are trapped in a maze with their unconscious teammate sealed inside a red cargo box. Players must cooperate between the two robots — pushing and pulling cardboard boxes to open routes — and deliver the red buddy box to the exit tile.
+R1 and R2 start in a safe zone (charging station / Repair Room) at the bottom of the maze. They must enter the maze through a narrow 1-tile door, navigate obstacles, reach R3 (sealed in a red cargo box), and bring R3 back to the Repair Room. Both robots must also return to the safe zone.
 
 ### Controls
 
 | Key | Action |
 |-----|--------|
-| Q | Select Robot A |
-| E | Select Robot C |
+| Q | Select Robot R1 (blue) |
+| E | Select Robot R2 (orange) |
 | Arrow Keys | Move selected robot |
 | Space | Attach / Detach to adjacent box |
 | R | Reset level |
 | N | Next level (after winning) |
 
+Touch controls are also available for mobile play.
+
 ### Rules
 
-- **Pushing**: Move into a box to push it one tile (the tile beyond must be empty).
-- **Attaching**: Press Space next to a box to attach. Press again to detach. Attachment is always explicit — never automatic.
+- **Pushing**: Move into a box to push it one tile forward (the tile beyond must be empty). No chain pushing.
+- **Attaching**: Press Space next to a box. With one adjacent box, attaches automatically. With multiple, attaches to the box in the facing direction (last movement direction).
 - **Towing (Pulling)**: While attached, move away from the box in a straight line — the box follows into your previous tile.
-- **Corner Rule**: A box **cannot** be towed around a 90-degree corner. The robot, box, and movement direction must stay collinear. To move a box around a corner, push it to the turn, loop around, and pull from the other side.
-- **Win Condition**: The level is complete when the red buddy box reaches the exit tile.
+- **Corner Rule**: A box cannot be towed around a 90-degree corner. To move a box around a corner, push it to the turn, loop around, and pull from the other side.
+- **Safe Zone Rule**: Normal boxes cannot enter the safe zone (they would "explode"). Only R3 can.
+- **Win Condition**: R3 on the Repair Room tile + both R1 and R2 in the safe zone. After winning, R3 "revives" with a 4-second animation sequence.
+
+## AI Solver
+
+Click the **AI SOLVE** button to watch the AI find and execute a solution automatically.
+
+### Algorithm
+
+The solver uses **macro-move weighted A\*** with connected-component abstraction:
+
+- **State**: `(robotComponentSignature, R3position, canonicalBoxPositions)` — robots abstracted to connected components, normal boxes encoded with combinatorial number system
+- **Transitions**: each search step = "robot walks to box + pushes/pulls it 1..N tiles"
+- **Heuristic**: `h = distToExit[R3] * 3` (precomputed BFS wall-aware distance, weighted)
+- **Validation**: every solution is verified through the actual game logic before playback
+
+### Performance
+
+| Level | Boxes | States Explored | Time |
+|-------|-------|----------------|------|
+| L1: First Rescue | 2B+R3 | 551 | 14ms |
+| L2: Narrow Ops | 3B+R3 | 1,152 | 77ms |
+| L3: Deep Extraction | 4B+R3 | 8,097 | 366ms |
+| L4: Corridor Jam | 3B+R3 | 581 | 14ms |
+| L5: Lock & Key | 4B+R3 | 113 | 5ms |
+| L6: The Gauntlet | 5B+R3 | 2,184 | 117ms |
+| L7: Huarongdao Lite | 4B+R3 | 6,226 | 186ms |
 
 ## Project Structure
 
@@ -31,13 +70,27 @@ Two robots (A and C) are trapped in a maze with their unconscious teammate seale
 src/
   types.ts        Type definitions (Vec2, Robot, Box, GameState, etc.)
   constants.ts    Tile size and color constants
-  levels.ts       3 handmade ASCII level maps
-  state.ts        Level parser — ASCII string → GameState
-  logic.ts        Core game logic (move, push, attach, tow, corner rule, win check)
+  levels.ts       7 handmade ASCII level maps
+  state.ts        Level parser — ASCII string → GameState (incl. safe zone computation)
+  logic.ts        Game rules (move, push, pull, corner rule, attach, safe zone, win check)
   input.ts        Keyboard listener → GameAction dispatcher
-  renderer.ts     HTML Canvas rendering (grid, boxes, robots, HUD, win overlay)
-  main.ts         Entry point — wires input, logic, and rendering together
-  style.css       Minimal styling
+  renderer.ts     Canvas rendering (grid, robots as hexapod beetles, boxes, HUD, win animation)
+  solver.ts       AI solver (macro-move A*, connected-component abstraction, expandAndValidate)
+  main.ts         Entry point (game loop, AI SOLVE button, touch controls, level select, playback)
+  style.css       Styling (incl. touch controls, level select buttons)
+
+docs/
+  maze-introd.md                    Original game design spec
+  solver-architecture-and-lessons.md  Solver architecture deep-dive and lessons learned
+  deep-learning-solver-plan.md      Future plan: neural network heuristic
+  chatgpt-pro-prompt.md             Consultation prompt sent to ChatGPT Pro
+  chatgpt-pro-response-1.md         ChatGPT Pro response #1
+  chatgpt-pro-response-2.md         ChatGPT Pro response #2
+  chatgpt-regular-response.md       ChatGPT 5.4 response
+  chatgpt-heuristic-consult.md      Heuristic optimization consultation
+  chatgpt-heuristic-response.md     Heuristic optimization response
+
+test-solver.ts    Solver benchmark script (7-level regression test)
 ```
 
 ## Getting Started
@@ -49,28 +102,83 @@ npm run dev
 
 Open http://localhost:5173 in your browser.
 
+### Run Solver Benchmark
+
+```bash
+npx tsx test-solver.ts
+```
+
+### Deploy to GitHub Pages
+
+```bash
+npx vite build --base='./'
+npx gh-pages -d dist
+```
+
+## Level Format
+
+Levels are defined as ASCII maps in `src/levels.ts`:
+
+```
+# = wall    . = floor    E = exit (Repair Room)
+1 = Robot R1    2 = Robot R2    3 = Robot R3 (red buddy box)
+B = normal box
+```
+
+Structure: maze area on top + 3x3 safe zone at bottom, connected by a 1-tile door.
+
+Example (Level 1):
+```
+########
+#....B.#
+#.##.#.#
+#.#....#
+#.#..#3#
+#.#..#.#
+#.B..#.#
+###.####
+##...###
+##.E.###
+##1.2###
+########
+```
+
+## Visual Design
+
+- **R1**: Blue hexapod beetle (6 articulated legs, sensor eyes, rotates with movement direction)
+- **R2**: Orange hexapod beetle
+- **R3**: Unconscious beetle in a red cargo box (legs curled, eyes half-shut). Revives to green on rescue.
+- **Normal boxes**: Brown cardboard with cross lines
+- **Safe zone**: Semi-transparent green overlay with "HOME" label
+- **Repair Room**: Green tile with "REPAIR ROOM" label
+
 ## Tech Stack
 
 - TypeScript
 - Vite (vanilla-ts template)
 - HTML Canvas 2D
+- No frameworks, no dependencies beyond Vite
 
-## Level Format
+## Key Technical Decisions
 
-Levels are defined as ASCII maps:
+| Decision | Rationale |
+|----------|-----------|
+| Vanilla TS, no React | Simpler for keyboard-driven grid game |
+| Canvas rendering | Direct pixel control for game graphics |
+| Macro-move search | Avoid exploding state space from step-by-step robot movement |
+| Connected-component abstraction | Collapse equivalent robot positions, ~100x state reduction |
+| Combinatorial encoding | Compact state keys for sorted box positions |
+| expandAndValidate | Guarantee solution correctness through real game logic |
+| Shared compBuf | Single allocation for flood-fill, reused across all computeComponents calls |
+| Pre-allocated BFS buffers | Avoid per-state TypedArray allocation and GC pressure |
 
-```
-# = wall    . = floor    A = Robot A    C = Robot C
-B = box     X = red buddy box           E = exit
-```
+## Future Plans
 
-Example:
+1. **Deep Learning Solver** — Train a CNN/GNN value network to replace hand-crafted heuristic. See `docs/deep-learning-solver-plan.md`.
+2. **MINIHEXA Integration** — Robot Bridge layer translating solver actions to physical hexapod commands.
+3. **Camera-based Maze Recognition** — Real-time overhead camera → maze state extraction → AI solving.
+4. **Self-Evolution Demo** — AI improves its solving ability through experience, visible to audience.
 
-```
-###########
-#A..B....E#
-#.#.#.##..#
-#.#..X.#C.#
-#...B.....#
-###########
-```
+## License
+
+Internal research project.

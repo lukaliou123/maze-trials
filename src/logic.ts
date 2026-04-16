@@ -35,6 +35,15 @@ function isAdjacent(a: Vec2, b: Vec2): boolean {
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y) === 1;
 }
 
+function inSafeZone(state: GameState, pos: Vec2): boolean {
+  return state.safeZone.some((s) => vecEq(s, pos));
+}
+
+// Normal boxes explode if they enter the safe zone — block the move
+function boxBlockedBySafeZone(state: GameState, boxIdx: number, dest: Vec2): boolean {
+  return !state.boxes[boxIdx].isRedBuddy && inSafeZone(state, dest);
+}
+
 function isOccupied(state: GameState, pos: Vec2): boolean {
   if (isWall(state, pos)) return true;
   if (boxAt(state, pos) >= 0) return true;
@@ -67,10 +76,13 @@ function validateAttachments(state: GameState): void {
   }
 }
 
-// --- Win check ---
+// --- Win check: R3 on exit + both robots in safe zone ---
 function checkWin(state: GameState): void {
   const redBuddy = state.boxes.find((b) => b.isRedBuddy);
-  if (redBuddy && vecEq(redBuddy.pos, state.exitPos)) {
+  if (!redBuddy || !vecEq(redBuddy.pos, state.exitPos)) return;
+  const inSafe = (pos: Vec2) =>
+    state.safeZone.some((s) => vecEq(s, pos));
+  if (inSafe(state.robots[0].pos) && inSafe(state.robots[1].pos)) {
     state.won = true;
   }
 }
@@ -95,6 +107,7 @@ function tryMove(state: GameState, direction: Direction): boolean {
     // --- PUSH ---
     const pushDest = vecAdd(targetPos, delta);
     if (isOccupied(state, pushDest)) return false;
+    if (boxBlockedBySafeZone(state, targetBoxIdx, pushDest)) return false;
 
     // If attached to a different box, check tow constraint
     if (
@@ -102,6 +115,15 @@ function tryMove(state: GameState, direction: Direction): boolean {
       robot.attachedBoxIndex !== targetBoxIdx
     ) {
       if (!canTow(state, ri, delta)) return false;
+    }
+
+    // Check tow destination for safe zone restriction
+    if (
+      robot.attachedBoxIndex !== null &&
+      robot.attachedBoxIndex !== targetBoxIdx &&
+      boxBlockedBySafeZone(state, robot.attachedBoxIndex, robot.pos)
+    ) {
+      return false;
     }
 
     // Execute push
@@ -127,6 +149,8 @@ function tryMove(state: GameState, direction: Direction): boolean {
   // --- WALK (empty tile) ---
   if (robot.attachedBoxIndex !== null) {
     if (!canTow(state, ri, delta)) return false;
+    if (boxBlockedBySafeZone(state, robot.attachedBoxIndex, robot.pos))
+      return false;
 
     const oldPos = { ...robot.pos };
     robot.pos = targetPos;
@@ -152,26 +176,26 @@ function toggleAttach(state: GameState): void {
     return;
   }
 
-  // Try facing direction first, then scan all directions
-  const facingDelta = DELTAS[robot.facing];
-  const facingPos = vecAdd(robot.pos, facingDelta);
-  const facingBox = boxAt(state, facingPos);
-  if (facingBox >= 0) {
-    robot.attachedBoxIndex = facingBox;
-    return;
+  // Find all adjacent boxes
+  const adjacent: number[] = [];
+  for (let d = 0; d < 4; d++) {
+    const neighbor = vecAdd(robot.pos, DELTAS[DIRECTIONS[d]]);
+    const idx = boxAt(state, neighbor);
+    if (idx >= 0) adjacent.push(idx);
   }
 
-  // Scan: up, right, down, left
-  const scanOrder: Direction[] = ['up', 'right', 'down', 'left'];
-  for (const dir of scanOrder) {
-    const neighbor = vecAdd(robot.pos, DELTAS[dir]);
-    const idx = boxAt(state, neighbor);
-    if (idx >= 0) {
-      robot.attachedBoxIndex = idx;
-      return;
-    }
+  if (adjacent.length === 1) {
+    // Only one adjacent box — attach directly, no facing requirement
+    robot.attachedBoxIndex = adjacent[0];
+  } else if (adjacent.length > 1) {
+    // Multiple adjacent boxes — use facing direction to choose
+    const facingPos = vecAdd(robot.pos, DELTAS[robot.facing]);
+    const facingBox = boxAt(state, facingPos);
+    if (facingBox >= 0) robot.attachedBoxIndex = facingBox;
   }
 }
+
+const DIRECTIONS: Direction[] = ['up', 'down', 'left', 'right'];
 
 // --- Main action dispatcher ---
 export function applyAction(state: GameState, action: GameAction): boolean {
@@ -179,7 +203,7 @@ export function applyAction(state: GameState, action: GameAction): boolean {
     case 'move':
       return tryMove(state, action.direction);
     case 'selectRobot':
-      state.selectedRobotIndex = action.id === 'A' ? 0 : 1;
+      state.selectedRobotIndex = action.id === 'R1' ? 0 : 1;
       return true;
     case 'toggleAttach':
       toggleAttach(state);
