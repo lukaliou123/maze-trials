@@ -13,7 +13,6 @@ body {
   min-height: 100vh;
   font-family: 'Segoe UI', sans-serif;
   color: #ffffff;
-  overflow-y: auto;
 }
 
 h1 {
@@ -25,18 +24,12 @@ h1 {
 
 #level-select {
   margin-bottom: 10px;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
-  gap: 6px;
-  justify-content: center;
-  width: 100%;
-  max-width: min(520px, 95vw);
-  padding: 0 4px;
+  display: flex;
+  gap: 8px;
 }
 
 #level-select button {
-  height: 30px;
-  padding: 5px 0;
+  padding: 5px 14px;
   font-size: 14px;
   font-family: monospace;
   background: #333;
@@ -58,10 +51,79 @@ h1 {
   border-color: #3baa5a;
 }
 
+#game-area {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
 #game-canvas {
   border: 2px solid #444;
   border-radius: 4px;
-  touch-action: none;
+  display: block;
+}
+
+#dialogue-panel {
+  width: 280px;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: #20203a;
+  border: 2px solid #444;
+  border-radius: 4px;
+  overflow-y: auto;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+#dialogue-empty {
+  color: #888;
+  font-style: italic;
+  text-align: center;
+  margin-top: auto;
+  margin-bottom: auto;
+  font-size: 13px;
+}
+
+.bubble {
+  position: relative;
+  padding: 8px 12px;
+  border-radius: 10px;
+  max-width: 88%;
+  word-wrap: break-word;
+  animation: bubble-in 0.18s ease-out;
+}
+
+.bubble-r1 {
+  align-self: flex-start;
+  background: rgba(64, 144, 224, 0.18);
+  border: 1px solid #4090e0;
+  color: #cfe6ff;
+}
+
+.bubble-r2 {
+  align-self: flex-end;
+  background: rgba(224, 160, 48, 0.18);
+  border: 1px solid #e0a030;
+  color: #ffe2b8;
+}
+
+.bubble-speaker {
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  margin-bottom: 2px;
+  opacity: 0.75;
+}
+
+.bubble-r1 .bubble-speaker { color: #4090e0; }
+.bubble-r2 .bubble-speaker { color: #e0a030; }
+
+@keyframes bubble-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 #solve-btn {
@@ -106,9 +168,9 @@ h1 {
 }
 
 .tc-btn {
-  width: min(56px, 15vw);
-  height: min(56px, 15vw);
-  font-size: min(20px, 5vw);
+  width: 56px;
+  height: 56px;
+  font-size: 20px;
   font-family: monospace;
   font-weight: bold;
   border: 2px solid #555;
@@ -131,7 +193,7 @@ h1 {
 .tc-dir {
   background: #1e3a5f;
   color: #6af;
-  font-size: min(24px, 6vw);
+  font-size: 24px;
 }
 
 .tc-dir:active {
@@ -149,8 +211,8 @@ h1 {
 }
 
 .tc-small {
-  font-size: min(13px, 3.5vw);
-  width: min(56px, 15vw);
+  font-size: 13px;
+  width: 56px;
   background: #333;
 }
 
@@ -165,4 +227,7 @@ h1 {
 @media (max-width: 600px) {
   #controls-help { display: none; }
   h1 { font-size: 22px; margin-bottom: 8px; }
+  #game-canvas { max-width: 95vw; }
+  #game-area { flex-direction: column; align-items: center; }
+  #dialogue-panel { width: 95vw; max-height: 180px; }
 }
