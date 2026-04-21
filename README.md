@@ -49,20 +49,28 @@ The solver uses **macro-move weighted A\*** with connected-component abstraction
 
 - **State**: `(robotComponentSignature, R3position, canonicalBoxPositions)` — robots abstracted to connected components, normal boxes encoded with combinatorial number system
 - **Transitions**: each search step = "robot walks to box + pushes/pulls it 1..N tiles"
-- **Heuristic**: `h = distToExit[R3] * 3` (precomputed BFS wall-aware distance, weighted)
+- **Heuristic**: weighted Dijkstra from R3 to both robots and the exit, with penalties for normal boxes blocking likely extraction routes
 - **Validation**: every solution is verified through the actual game logic before playback
 
 ### Performance
 
 | Level | Boxes | States Explored | Time |
 |-------|-------|----------------|------|
-| L1: First Rescue | 2B+R3 | 551 | 14ms |
-| L2: Narrow Ops | 3B+R3 | 1,152 | 77ms |
-| L3: Deep Extraction | 4B+R3 | 8,097 | 366ms |
-| L4: Corridor Jam | 3B+R3 | 581 | 14ms |
-| L5: Lock & Key | 4B+R3 | 113 | 5ms |
-| L6: The Gauntlet | 5B+R3 | 2,184 | 117ms |
-| L7: Huarongdao Lite | 4B+R3 | 6,226 | 186ms |
+| L1: First Rescue | 2B+R3 | 36 | 11ms |
+| L2: Narrow Ops | 3B+R3 | 32 | 10ms |
+| L3: Deep Extraction | 4B+R3 | 77 | 13ms |
+| L4: Corridor Jam | 3B+R3 | 46 | 7ms |
+| L5: Lock & Key | 4B+R3 | 40 | 7ms |
+| L6: The Gauntlet | 5B+R3 | 79 | 9ms |
+| L7: Huarongdao Lite | 4B+R3 | 319 | 19ms |
+| L8: Gridlock | 5B+R3 | 1,083 | 26ms |
+| L9: Dead End | 4B+R3 | 5,551 | 99ms |
+| L10: Red-Blue Siege | 7B+R3 | 207,625 | 2,739ms |
+| L11: Red-Blue Lockdown | 8B+R3 | 172,718 | 2,240ms |
+| L12: Left-Hand Siege | 7B+R3 | 216,523 | 2,835ms |
+| L13: Left-Hand Lockdown | 8B+R3 | 174,898 | 2,228ms |
+| L14: Wide Hook | 8B+R3 | 220,635 | 4,148ms |
+| L15: Central Chicane | 8B+R3 | 114,210 | 3,793ms |
 
 ## Project Structure
 
@@ -70,7 +78,7 @@ The solver uses **macro-move weighted A\*** with connected-component abstraction
 src/
   types.ts        Type definitions (Vec2, Robot, Box, GameState, etc.)
   constants.ts    Tile size and color constants
-  levels.ts       7 handmade ASCII level maps
+  levels.ts       15 handmade ASCII level maps
   state.ts        Level parser — ASCII string → GameState (incl. safe zone computation)
   logic.ts        Game rules (move, push, pull, corner rule, attach, safe zone, win check)
   input.ts        Keyboard listener → GameAction dispatcher
@@ -90,7 +98,7 @@ docs/
   chatgpt-heuristic-consult.md      Heuristic optimization consultation
   chatgpt-heuristic-response.md     Heuristic optimization response
 
-test-solver.ts    Solver benchmark script (7-level regression test)
+test-solver.ts    Solver benchmark script (15-level regression test)
 ```
 
 ## Getting Started

@@ -24,12 +24,15 @@ h1 {
 
 #level-select {
   margin-bottom: 10px;
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(10, 44px);
   gap: 8px;
+  justify-content: center;
 }
 
 #level-select button {
-  padding: 5px 14px;
+  height: 30px;
+  padding: 5px 0;
   font-size: 14px;
   font-family: monospace;
   background: #333;

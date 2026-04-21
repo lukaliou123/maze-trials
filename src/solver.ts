@@ -430,7 +430,7 @@ export function solve(gameState: GameState): SolverAction[] | null {
       console.log(`Solver: timeout after ${explored} states, ${((performance.now() - startTime) / 1000).toFixed(1)}s`);
       return null;
     }
-    const [fVal, ck] = heap.pop();
+    const [, ck] = heap.pop();
     if (!gMap.has(ck)) continue;
     decodeBoxes(ck, bp);
     const [r1, r2] = unpackWitness(witnessMap.get(ck)!);
@@ -546,7 +546,6 @@ export function solve(gameState: GameState): SolverAction[] | null {
                     const newCompSig = Math.min(nc1, nc2) * 16 + Math.max(nc1, nc2);
                     const newSF = computeSafeFlags(newR1, newR2);
                     const nk = encodeAbstract(newCompSig, newSF, bp);
-                    bp[bi] = saved;
                     if (!parent.has(nk)) {
                       parent.set(nk, ck);
                       gMap.set(nk, ng);
@@ -555,6 +554,7 @@ export function solve(gameState: GameState): SolverAction[] | null {
                       lastMove.set(nk, (dest << 2) | d);
                       heap.push(ng + dijkstraFromR3(bp, newR1, newR2) * 3 - (bi === redIdx ? 1 : 0), nk);
                     }
+                    bp[bi] = saved;
                     cx = nx; cy = ny;
                   }
                 }
@@ -597,7 +597,6 @@ export function solve(gameState: GameState): SolverAction[] | null {
                     const newCompSig2 = Math.min(nc1p, nc2p) * 16 + Math.max(nc1p, nc2p);
                     const newSF2 = computeSafeFlags(newR1, newR2);
                     const nk = encodeAbstract(newCompSig2, newSF2, bp);
-                    bp[bi] = saved;
                     if (!parent.has(nk)) {
                       parent.set(nk, ck);
                       gMap.set(nk, ng);
@@ -606,6 +605,7 @@ export function solve(gameState: GameState): SolverAction[] | null {
                       lastMove.set(nk, (bDest << 2) | d);
                       heap.push(ng + dijkstraFromR3(bp, newR1, newR2) * 3 - (bi === redIdx ? 1 : 0), nk);
                     }
+                    bp[bi] = saved;
                     rCx = rnx; rCy = rny;
                   }
                 }
@@ -649,17 +649,8 @@ export function solve(gameState: GameState): SolverAction[] | null {
   console.log(`Solver: exhausted ${explored} states, no solution`);
   return null;
 
-  // =======================================================
-  // Expand macro plan into explicit GameActions on a real
-  // game state clone. Every action goes through applyAction.
-  // =======================================================
-  function expandAndValidate(goalKey: number): SolverAction[] | null {
-    const chain: number[] = [];
-    let k = goalKey;
-    while (k !== -1) { chain.unshift(k); k = parent.get(k)!; }
-
-    // Clone game state
-    const s: GameState = {
+  function cloneInitialState(): GameState {
+    return {
       grid: gameState.grid,
       width: gameState.width,
       height: gameState.height,
@@ -675,6 +666,193 @@ export function solve(gameState: GameState): SolverAction[] | null {
       won: false,
       winPhase: 0,
     };
+  }
+
+  function validateActionList(candidate: SolverAction[]): boolean {
+    const s = cloneInitialState();
+    for (const action of candidate) {
+      const ok = applyAction(s, action as any);
+      if (!ok && action.type === 'move') return false;
+    }
+    return s.won;
+  }
+
+  function replayPrefix(actions: SolverAction[], count: number): GameState | null {
+    const s = cloneInitialState();
+    for (let i = 0; i < count; i++) {
+      const ok = applyAction(s, actions[i] as any);
+      if (!ok && actions[i].type === 'move') return null;
+    }
+    return s;
+  }
+
+  function cloneState(s: GameState): GameState {
+    return {
+      grid: s.grid,
+      width: s.width,
+      height: s.height,
+      robots: [
+        { ...s.robots[0], pos: { ...s.robots[0].pos } },
+        { ...s.robots[1], pos: { ...s.robots[1].pos } },
+      ],
+      boxes: s.boxes.map(b => ({ pos: { ...b.pos }, isRedBuddy: b.isRedBuddy })),
+      exitPos: s.exitPos,
+      safeZone: s.safeZone,
+      selectedRobotIndex: s.selectedRobotIndex,
+      steps: s.steps,
+      won: s.won,
+      winPhase: s.winPhase,
+    };
+  }
+
+  function exactStateKey(s: GameState): string {
+    return [
+      s.selectedRobotIndex,
+      s.robots[0].pos.x, s.robots[0].pos.y, s.robots[0].facing, s.robots[0].attachedBoxIndex ?? -1,
+      s.robots[1].pos.x, s.robots[1].pos.y, s.robots[1].facing, s.robots[1].attachedBoxIndex ?? -1,
+      ...s.boxes.flatMap(b => [b.pos.x, b.pos.y]),
+    ].join(',');
+  }
+
+  function exactFinishHeuristic(s: GameState): number {
+    const redBuddy = s.boxes.find(b => b.isRedBuddy);
+    if (!redBuddy) return 0;
+    let h = Math.abs(redBuddy.pos.x - s.exitPos.x) + Math.abs(redBuddy.pos.y - s.exitPos.y);
+    if (redBuddy.pos.x === s.exitPos.x && redBuddy.pos.y === s.exitPos.y) {
+      for (const robot of s.robots) {
+        const rp = robot.pos.y * W + robot.pos.x;
+        if (!safe[rp]) h += 2;
+      }
+    }
+    return h;
+  }
+
+  function primitiveActions(): SolverAction[] {
+    return [
+      { type: 'selectRobot', id: 'R1' },
+      { type: 'selectRobot', id: 'R2' },
+      { type: 'toggleAttach' },
+      { type: 'move', direction: 'up' },
+      { type: 'move', direction: 'down' },
+      { type: 'move', direction: 'left' },
+      { type: 'move', direction: 'right' },
+    ];
+  }
+
+  function exactFinishFrom(start: GameState, maxActions: number, maxStates: number): SolverAction[] | null {
+    const actions = primitiveActions();
+    const states: GameState[] = [cloneState(start)];
+    const parent: number[] = [-1];
+    const parentAction: (SolverAction | null)[] = [null];
+    const localG: number[] = [0];
+    const seen = new Map<string, number>();
+    const localHeap = new MinHeap();
+
+    seen.set(exactStateKey(start), 0);
+    localHeap.push(exactFinishHeuristic(start) * 3, 0);
+
+    let expanded = 0;
+    while (localHeap.size > 0 && expanded < maxStates) {
+      const [, id] = localHeap.pop();
+      const cur = states[id];
+      expanded++;
+
+      if (cur.won) {
+        const out: SolverAction[] = [];
+        let p = id;
+        while (parent[p] >= 0) {
+          out.unshift(parentAction[p]!);
+          p = parent[p];
+        }
+        return out;
+      }
+
+      if (localG[id] >= maxActions) continue;
+
+      for (const action of actions) {
+        const next = cloneState(cur);
+        const ok = applyAction(next, action as any);
+        if (!ok && action.type === 'move') continue;
+
+        const k = exactStateKey(next);
+        if (seen.has(k)) continue;
+
+        const nextId = states.length;
+        seen.set(k, nextId);
+        states.push(next);
+        parent.push(id);
+        parentAction.push(action);
+        localG.push(localG[id] + 1);
+        localHeap.push(localG[nextId] + exactFinishHeuristic(next) * 3, nextId);
+      }
+    }
+
+    return null;
+  }
+
+  function optimizeSuffixByReplanning(actions: SolverAction[]): SolverAction[] {
+    if (actions.length < 180) return actions;
+
+    let best = actions;
+    const suffixSizes = [50];
+    const maxStates = 60_000;
+
+    for (const suffixSize of suffixSizes) {
+      if (suffixSize >= best.length) continue;
+      const start = best.length - suffixSize;
+      const prefixState = replayPrefix(best, start);
+      if (!prefixState) continue;
+
+      const replacement = exactFinishFrom(prefixState, suffixSize - 1, maxStates);
+      if (!replacement || replacement.length >= suffixSize) continue;
+
+      const candidate = best.slice(0, start).concat(replacement);
+      if (candidate.length < best.length && validateActionList(candidate)) {
+        best = candidate;
+      }
+    }
+
+    return best;
+  }
+
+  function optimizeActions(actions: SolverAction[]): SolverAction[] {
+    let best = actions;
+    let improved = true;
+    let attempts = 0;
+    const maxAttempts = 1400;
+    const windowSizes = [64, 48, 32, 24, 16, 12, 8, 6, 4, 3, 2, 1];
+
+    while (improved && attempts < maxAttempts) {
+      improved = false;
+      for (const size of windowSizes) {
+        if (size >= best.length) continue;
+        for (let start = 0; start + size <= best.length && attempts < maxAttempts; start++) {
+          attempts++;
+          const candidate = best.slice(0, start).concat(best.slice(start + size));
+          if (validateActionList(candidate)) {
+            best = candidate;
+            improved = true;
+            break;
+          }
+        }
+        if (improved || attempts >= maxAttempts) break;
+      }
+    }
+
+    return optimizeSuffixByReplanning(best);
+  }
+
+  // =======================================================
+  // Expand macro plan into explicit GameActions on a real
+  // game state clone. Every action goes through applyAction.
+  // =======================================================
+  function expandAndValidate(goalKey: number): SolverAction[] | null {
+    const chain: number[] = [];
+    let k = goalKey;
+    while (k !== -1) { chain.unshift(k); k = parent.get(k)!; }
+
+    // Clone game state
+    const s: GameState = cloneInitialState();
 
     const actions: SolverAction[] = [];
     const curBp: number[] = new Array(nBox);
@@ -740,7 +918,7 @@ export function solve(gameState: GameState): SolverAction[] | null {
     }
 
     for (let ci = 0; ci < chain.length - 1; ci++) {
-      const [cr1, cr2] = decodeStateFromWitness(chain[ci], curBp);
+      decodeStateFromWitness(chain[ci], curBp);
       decodeStateFromWitness(chain[ci + 1], nextBp);
 
       const info = actionInfo.get(chain[ci + 1])!;
@@ -877,6 +1055,6 @@ export function solve(gameState: GameState): SolverAction[] | null {
       }
     }
 
-    return s.won ? actions : null;
+    return s.won ? optimizeActions(actions) : null;
   }
 }

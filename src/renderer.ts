@@ -227,6 +227,44 @@ function drawBeetle(
     }
   }
 
+  // --- Antennae at the front ---
+  const antennaRootY = -bodyR * 0.68;
+  const antennaTipY = -bodyR * (collapsed ? 1.08 : 1.38);
+  const antennaSpread = bodyR * 0.14;
+  const antennaCurl = bodyR * (collapsed ? 0.12 : 0.28);
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  for (const side of [-1, 1]) {
+    ctx.moveTo(side * antennaSpread, antennaRootY);
+    ctx.quadraticCurveTo(
+      side * (antennaSpread + antennaCurl * 0.75),
+      -bodyR * 1.02,
+      side * (antennaSpread + antennaCurl),
+      antennaTipY
+    );
+  }
+  ctx.stroke();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  for (const side of [-1, 1]) {
+    ctx.moveTo(side * antennaSpread, antennaRootY);
+    ctx.quadraticCurveTo(
+      side * (antennaSpread + antennaCurl * 0.75),
+      -bodyR * 1.02,
+      side * (antennaSpread + antennaCurl),
+      antennaTipY
+    );
+  }
+  ctx.stroke();
+  ctx.fillStyle = color;
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.arc(side * (antennaSpread + antennaCurl), antennaTipY, bodyR * 0.08, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   // --- Round body ---
   ctx.fillStyle = color;
   ctx.beginPath();
