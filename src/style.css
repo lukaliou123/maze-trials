@@ -63,6 +63,10 @@ h1 {
   display: block;
 }
 
+#dialogue-panel.hidden {
+  display: none;
+}
+
 #dialogue-panel {
   width: 280px;
   align-self: stretch;
@@ -145,8 +149,14 @@ h1 {
   to { opacity: 1; transform: translateY(0); }
 }
 
-#solve-btn {
+#btn-row {
   margin-top: 12px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+#solve-btn {
   padding: 8px 28px;
   font-size: 16px;
   font-family: monospace;
@@ -167,6 +177,29 @@ h1 {
 #solve-btn:disabled {
   background: #555;
   cursor: not-allowed;
+}
+
+#dialogue-toggle {
+  padding: 6px 10px;
+  font-size: 18px;
+  background: #333;
+  color: #888;
+  border: 2px solid #555;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  line-height: 1;
+}
+
+#dialogue-toggle:hover {
+  background: #444;
+  color: #fff;
+}
+
+#dialogue-toggle.active {
+  background: #1e3a5f;
+  color: #6af;
+  border-color: #4090e0;
 }
 
 /* Touch controls — visible on all screens, essential for mobile */

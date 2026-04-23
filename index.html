@@ -10,11 +10,14 @@
     <div id="level-select"></div>
     <div id="game-area">
       <canvas id="game-canvas"></canvas>
-      <aside id="dialogue-panel" aria-label="Robot dialogue">
+      <aside id="dialogue-panel" class="hidden" aria-label="Robot dialogue">
         <div id="dialogue-empty">两位机器人在等开场...</div>
       </aside>
     </div>
-    <button id="solve-btn">AI SOLVE</button>
+    <div id="btn-row">
+      <button id="solve-btn">AI SOLVE</button>
+      <button id="dialogue-toggle" title="Toggle AI dialogue panel">&#x1F4AC;</button>
+    </div>
     <div id="touch-controls">
       <div id="touch-top">
         <button class="tc-btn" data-action="select-r1">R1</button>

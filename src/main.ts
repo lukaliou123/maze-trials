@@ -4,7 +4,8 @@ import { applyAction } from './logic';
 import { setupInput } from './input';
 import { createRenderer } from './renderer';
 import { solve } from './solver';
-import type { GameAction } from './types';
+import { computeTileSize } from './constants';
+import type { GameAction, Direction, Vec2 } from './types';
 import type { SolverAction } from './solver';
 import { scanTriggers } from './dialogue/triggers';
 import { requestAllDialogues } from './dialogue/client';
@@ -23,6 +24,18 @@ const solveBtn = document.getElementById('solve-btn') as HTMLButtonElement;
 const levelSelectDiv = document.getElementById('level-select') as HTMLDivElement;
 
 let playbackAbort: AbortController | null = null;
+let autoWalkTimer: ReturnType<typeof setInterval> | null = null;
+let dialogueEnabled = false;
+
+const dialogueToggleBtn = document.getElementById('dialogue-toggle') as HTMLButtonElement;
+const dialoguePanelEl = document.getElementById('dialogue-panel') as HTMLElement;
+
+dialogueToggleBtn.addEventListener('click', () => {
+  dialogueEnabled = !dialogueEnabled;
+  dialoguePanelEl.classList.toggle('hidden', !dialogueEnabled);
+  dialogueToggleBtn.classList.toggle('active', dialogueEnabled);
+  if (!dialogueEnabled) dialoguePanel.reset();
+});
 
 // --- Level select buttons ---
 function buildLevelSelect(): void {
@@ -34,7 +47,7 @@ function buildLevelSelect(): void {
     if (i === currentLevelIndex) btn.classList.add('active');
     btn.addEventListener('click', () => {
       stopPlayback();
-      dialoguePanel.reset();
+      if (dialogueEnabled) dialoguePanel.reset();
       currentLevelIndex = i;
       state = createStateFromLevel(LEVELS[currentLevelIndex]);
       buildLevelSelect();
@@ -45,6 +58,7 @@ function buildLevelSelect(): void {
 }
 
 function stopPlayback(): void {
+  stopAutoWalk();
   if (playbackAbort) {
     playbackAbort.abort();
     playbackAbort = null;
@@ -72,10 +86,115 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
+// --- Mobile: tap-to-move ---
+
+function stopAutoWalk(): void {
+  if (autoWalkTimer !== null) {
+    clearInterval(autoWalkTimer);
+    autoWalkTimer = null;
+  }
+}
+
+function startAutoWalk(directions: Direction[]): void {
+  stopAutoWalk();
+  let i = 0;
+  const step = () => {
+    if (i >= directions.length || state.won) {
+      stopAutoWalk();
+      if (state.won) startWinSequence();
+      return;
+    }
+    const ok = applyAction(state, { type: 'move', direction: directions[i] });
+    render();
+    if (!ok) {
+      stopAutoWalk();
+      return;
+    }
+    i++;
+  };
+  step();
+  if (i < directions.length) {
+    autoWalkTimer = setInterval(step, 120);
+  }
+}
+
+function findPath(from: Vec2, to: Vec2): Direction[] {
+  if (from.x === to.x && from.y === to.y) return [];
+  const visited = new Set<string>();
+  const queue: { pos: Vec2; path: Direction[] }[] = [{ pos: from, path: [] }];
+  visited.add(`${from.x},${from.y}`);
+
+  const dirs: { dir: Direction; dx: number; dy: number }[] = [
+    { dir: 'up', dx: 0, dy: -1 },
+    { dir: 'down', dx: 0, dy: 1 },
+    { dir: 'left', dx: -1, dy: 0 },
+    { dir: 'right', dx: 1, dy: 0 },
+  ];
+
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    for (const { dir, dx, dy } of dirs) {
+      const nx = cur.pos.x + dx;
+      const ny = cur.pos.y + dy;
+      const key = `${nx},${ny}`;
+      if (visited.has(key)) continue;
+      if (nx < 0 || ny < 0 || nx >= state.width || ny >= state.height) continue;
+      if (state.grid[ny][nx] === 'wall') continue;
+      if (state.boxes.some(b => b.pos.x === nx && b.pos.y === ny)) continue;
+      if (state.robots.some((r, ri) => ri !== state.selectedRobotIndex && r.pos.x === nx && r.pos.y === ny)) continue;
+      visited.add(key);
+      const newPath = [...cur.path, dir];
+      if (nx === to.x && ny === to.y) return newPath;
+      queue.push({ pos: { x: nx, y: ny }, path: newPath });
+    }
+  }
+  return [];
+}
+
+function handleTap(gridX: number, gridY: number): void {
+  if (state.won || isPlaying()) return;
+  stopAutoWalk();
+
+  if (gridX < 0 || gridY < 0 || gridX >= state.width || gridY >= state.height) return;
+
+  for (let i = 0; i < state.robots.length; i++) {
+    if (state.robots[i].pos.x === gridX && state.robots[i].pos.y === gridY) {
+      state.selectedRobotIndex = i;
+      render();
+      return;
+    }
+  }
+
+  const robot = state.robots[state.selectedRobotIndex];
+  const dist = Math.abs(robot.pos.x - gridX) + Math.abs(robot.pos.y - gridY);
+
+  if (dist === 1 && state.boxes.some(b => b.pos.x === gridX && b.pos.y === gridY)) {
+    const dx = gridX - robot.pos.x;
+    const dy = gridY - robot.pos.y;
+    if (dx === 1) robot.facing = 'right';
+    else if (dx === -1) robot.facing = 'left';
+    else if (dy === 1) robot.facing = 'down';
+    else if (dy === -1) robot.facing = 'up';
+    applyAction(state, { type: 'toggleAttach' });
+    render();
+    return;
+  }
+
+  if (state.grid[gridY][gridX] === 'wall') return;
+
+  const path = findPath(robot.pos, { x: gridX, y: gridY });
+  if (path.length > 0) {
+    startAutoWalk(path);
+  }
+}
+
+// --- Core game actions ---
+
 function handleAction(action: GameAction): void {
+  stopAutoWalk();
   if (action.type === 'reset') {
     stopPlayback();
-    dialoguePanel.reset();
+    if (dialogueEnabled) dialoguePanel.reset();
     state = createStateFromLevel(LEVELS[currentLevelIndex]);
     render();
     return;
@@ -85,7 +204,7 @@ function handleAction(action: GameAction): void {
     stopPlayback();
     if (state.won && currentLevelIndex < LEVELS.length - 1) {
       currentLevelIndex++;
-      dialoguePanel.reset();
+      if (dialogueEnabled) dialoguePanel.reset();
       state = createStateFromLevel(LEVELS[currentLevelIndex]);
       buildLevelSelect();
     }
@@ -100,16 +219,24 @@ function handleAction(action: GameAction): void {
   if (state.won) startWinSequence();
 }
 
+function getAvailableCanvasHeight(): number {
+  let used = 0;
+  for (const sel of ['h1', '#level-select', '#btn-row', '#touch-controls']) {
+    const el = document.querySelector(sel) as HTMLElement | null;
+    if (el) used += el.offsetHeight;
+  }
+  return window.innerHeight - used - 60;
+}
+
 function render(): void {
+  computeTileSize(state.width, state.height, getAvailableCanvasHeight());
   renderer.render(state, LEVELS[currentLevelIndex].name);
 }
 
 function startWinSequence(): void {
-  // Phase 1: after 2s, R3 revives (box disappears, healthy beetle)
   setTimeout(() => {
     state.winPhase = 1;
     render();
-    // Phase 2: after 2 more seconds, show victory overlay
     setTimeout(() => {
       state.winPhase = 2;
       render();
@@ -117,7 +244,8 @@ function startWinSequence(): void {
   }, 2000);
 }
 
-// Per-playback dialogue cache: moment.triggerActionIndex -> lines
+// --- Dialogue system ---
+
 let dialogueCache: Map<number, DialogueLine[]> = new Map();
 let playedMomentIndices: Set<number> = new Set();
 
@@ -158,38 +286,41 @@ function startBackgroundRetry(
 }
 
 async function startPlayback(actions: SolverAction[]): Promise<void> {
-  const initialState = createStateFromLevel(LEVELS[currentLevelIndex]);
-  const moments = scanTriggers(actions, currentLevelIndex, initialState);
-  const momentsByIndex = new Map<number, DialogueMoment>();
-  for (const m of moments) momentsByIndex.set(m.triggerActionIndex, m);
-
   const ctrl = new AbortController();
   playbackAbort = ctrl;
   const signal = ctrl.signal;
 
-  dialoguePanel.reset();
   state = createStateFromLevel(LEVELS[currentLevelIndex]);
   render();
-  dialogueCache = new Map();
-  playedMomentIndices = new Set();
 
-  // Pre-fetch all dialogue in one LLM call.
-  solveBtn.textContent = '计划路线...';
-  const t0 = performance.now();
-  const batch = await requestAllDialogues(moments, currentLevelIndex, signal);
-  const dt = performance.now() - t0;
-  console.log(
-    `[dialogue] prefetch ${moments.length} moments in ${dt.toFixed(0)}ms` +
-      (batch.usedFallback ? ' (fallback)' : ' (LLM)'),
-  );
-  if (signal.aborted) {
-    if (playbackAbort === ctrl) playbackAbort = null;
-    solveBtn.textContent = 'AI SOLVE';
-    solveBtn.disabled = false;
-    return;
+  let momentsByIndex = new Map<number, DialogueMoment>();
+
+  if (dialogueEnabled) {
+    const initialState = createStateFromLevel(LEVELS[currentLevelIndex]);
+    const moments = scanTriggers(actions, currentLevelIndex, initialState);
+    for (const m of moments) momentsByIndex.set(m.triggerActionIndex, m);
+
+    dialoguePanel.reset();
+    dialogueCache = new Map();
+    playedMomentIndices = new Set();
+
+    solveBtn.textContent = '计划路线...';
+    const t0 = performance.now();
+    const batch = await requestAllDialogues(moments, currentLevelIndex, signal);
+    const dt = performance.now() - t0;
+    console.log(
+      `[dialogue] prefetch ${moments.length} moments in ${dt.toFixed(0)}ms` +
+        (batch.usedFallback ? ' (fallback)' : ' (LLM)'),
+    );
+    if (signal.aborted) {
+      if (playbackAbort === ctrl) playbackAbort = null;
+      solveBtn.textContent = 'AI SOLVE';
+      solveBtn.disabled = false;
+      return;
+    }
+    dialogueCache = batch.cache;
+    if (batch.usedFallback) startBackgroundRetry(moments, currentLevelIndex, signal);
   }
-  dialogueCache = batch.cache;
-  if (batch.usedFallback) startBackgroundRetry(moments, currentLevelIndex, signal);
 
   solveBtn.textContent = `REPLAYING 0/${actions.length}`;
 
@@ -197,9 +328,11 @@ async function startPlayback(actions: SolverAction[]): Promise<void> {
     for (let i = 0; i <= actions.length; i++) {
       if (signal.aborted) return;
 
-      const moment = momentsByIndex.get(i);
-      if (moment) await renderMomentFromCache(moment, signal);
-      if (signal.aborted) return;
+      if (dialogueEnabled) {
+        const moment = momentsByIndex.get(i);
+        if (moment) await renderMomentFromCache(moment, signal);
+        if (signal.aborted) return;
+      }
 
       if (i === actions.length) break;
 
@@ -249,8 +382,10 @@ solveBtn.addEventListener('click', () => {
   }, 50);
 });
 
-setupInput(handleAction);
+setupInput(handleAction, canvas, handleTap);
 buildLevelSelect();
+
+window.addEventListener('resize', () => render());
 
 // Touch controls
 document.querySelectorAll<HTMLButtonElement>('.tc-btn').forEach((btn) => {
