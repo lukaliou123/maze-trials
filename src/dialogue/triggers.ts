@@ -220,7 +220,7 @@ export function scanTriggers(
       const reason = detectSwitchReason(actions, i);
       const reasonText =
         reason === 'next_robot_attached'
-          ? `轮到 ${currentRobot}，需要它来抓取/拉一个箱子`
+          ? `轮到 ${currentRobot}，需要它来接应/拖拽目标`
           : reason === 'next_robot_walks'
           ? `轮到 ${currentRobot}，它要直接走/推`
           : `轮到 ${currentRobot} 行动`;
@@ -247,7 +247,7 @@ export function scanTriggers(
     if (attachedBefore !== null) {
       // Tow run
       const kind: 'red_r3' | 'normal' = isRedBox(initialState, attachedBefore) ? 'red_r3' : 'normal';
-      const objText = kind === 'red_r3' ? '红色 R3' : '普通箱';
+      const objText = kind === 'red_r3' ? '故障同伴 R3' : '普通箱';
       moments.push({
         triggerActionIndex: run.startIndex,
         trigger: 'before_tow',
@@ -262,7 +262,7 @@ export function scanTriggers(
       const push = detectPushTarget(initialState, snapshots, run);
       const targetText =
         push.kind === 'red_r3'
-          ? `推着红色 R3 向${DIR_CN[run.direction]}前进 ${run.length} 格`
+          ? `推着故障同伴 R3 向${DIR_CN[run.direction]}前进 ${run.length} 格`
           : push.kind === 'normal'
           ? `推一个普通箱清路，向${DIR_CN[run.direction]}走 ${run.length} 格`
           : `自己走 ${run.length} 格，没推东西`;
@@ -296,7 +296,7 @@ export function scanTriggers(
           trigger: 'rescuing_r3',
           context: {
             activeRobot: trackingRobot,
-            upcomingActions: `${trackingRobot} 终于抓到了 R3（红色箱），下一步开始往救援区拖`,
+            upcomingActions: `${trackingRobot} 终于接上了故障的 R3，下一步开始往救援区拖`,
             semantic: { attachedBox: 'red_r3' },
           },
         });

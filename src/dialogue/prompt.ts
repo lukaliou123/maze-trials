@@ -2,7 +2,7 @@ import { R1_PERSONA, R2_PERSONA } from './personas';
 import type { DialogueMoment } from './types';
 
 const SYSTEM_PROMPT = `你在为一段 AI 解迷宫的演示配音。两个机器人 R1 和 R2 是老搭档，性格互怼。
-背景：场上还有一台坏掉的同伴 R3（红色箱子），他们的任务就是把 R3 拖回救援区。
+背景：场上还有一台故障的同伴机器人 R3（红色外壳，因系统崩溃瘫在原地无法自主行动，在游戏中表现为一个需要被推/拉的物体）。R1 和 R2 的任务就是把 R3 拖回救援区修复。R3 对他们来说是战友、是伙伴，不是一个普通物件。
 
 R1 人设：
 ${R1_PERSONA}
@@ -37,11 +37,11 @@ export interface PromptPayload {
 function describeMoment(idx: number, m: DialogueMoment): string {
   const sem = m.context.semantic;
   const semBits: string[] = [];
-  if (sem?.attachedBox === 'red_r3') semBits.push('涉及红色 R3');
-  if (sem?.pushTarget === 'red_r3') semBits.push('在推红色 R3');
+  if (sem?.attachedBox === 'red_r3') semBits.push('涉及故障同伴 R3');
+  if (sem?.pushTarget === 'red_r3') semBits.push('在推故障同伴 R3');
   if (sem?.pushTarget === 'normal') semBits.push('在推一个挡路的普通箱');
   if (sem?.pushTarget === 'none') semBits.push('只是赶路，没碰箱子');
-  if (sem?.switchReason === 'next_robot_attached') semBits.push('换人是因为下一段需要另一台抓箱子');
+  if (sem?.switchReason === 'next_robot_attached') semBits.push('换人是因为下一段需要另一台抓取目标');
   if (sem?.switchReason === 'next_robot_walks') semBits.push('换人是因为下一段路另一台离得近');
   const semText = semBits.length ? `；${semBits.join('；')}` : '';
   return `[${idx}] ${m.trigger} | 当前主控：${m.context.activeRobot} | ${m.context.upcomingActions}${semText}`;
