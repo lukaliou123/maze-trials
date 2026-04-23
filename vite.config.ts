@@ -75,6 +75,7 @@ function llmProxyPlugin(env: Record<string, string>): Plugin {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), ['DEEPSEEK_']);
   return {
+    base: '/maze-trials/',
     plugins: [llmProxyPlugin(env)],
   };
 });

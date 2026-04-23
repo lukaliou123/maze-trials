@@ -2,7 +2,11 @@ import { buildBatchPrompt } from './prompt';
 import { pickAllFallbacks } from './fallback';
 import type { DialogueLine, DialogueMoment } from './types';
 
-const ENDPOINT = '/api/llm';
+const DS_BASE_URL = 'https://api.deepseek.com/v1';
+const DS_API_KEY = 'sk-830660b7b89442d58a67b224451fe115';
+const DS_MODEL = 'deepseek-chat';
+const ENDPOINT = `${DS_BASE_URL}/chat/completions`;
+
 const BATCH_TIMEOUT_MS = 25000;
 const MAX_LINES_PER_MOMENT = 4;
 const MAX_LINE_CHARS = 30;
@@ -36,10 +40,14 @@ export async function requestAllDialogues(
   });
 
   try {
+    const body = { ...payload, model: DS_MODEL };
     const res = await fetch(ENDPOINT, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${DS_API_KEY}`,
+      },
+      body: JSON.stringify(body),
       signal: localCtrl.signal,
     });
     if (!res.ok) {
